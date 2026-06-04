@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 08f33e1f8c8a6df42aa01135d4697118
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 229076
+  packageName: Rigged Stethoscope
+  packageVersion: 1.0
+  assetPath: Assets/Stethoscope/Scenes/Stethoscope.unity
+  uploadId: 517048
