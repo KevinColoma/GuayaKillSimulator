@@ -71,3 +71,8 @@ Desktop.ini
 .idea/
 *.swp
 *.swo
+
+# Extras locales (no versionar)
+/[Aa]ssets/[Ss]creenshots/
+/UIElementsSchema/
+/[Aa]ssets/_[Rr]ecovery/

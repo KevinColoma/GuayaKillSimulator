@@ -1,5 +1,7 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
+
 
 public class FirstPersonMovement : MonoBehaviour
 {
@@ -21,12 +23,12 @@ public class FirstPersonMovement : MonoBehaviour
         rigidbody = GetComponent<Rigidbody>();
     }
 
-    void FixedUpdate()
+void FixedUpdate()
     {
         // Solo mover si el control está activado
         if (!isControlEnabled) return;
 
-        IsRunning = canRun && Input.GetKey(runningKey);
+        IsRunning = canRun && InputCompat.IsKeyPressed(runningKey);
 
         float targetMovingSpeed = IsRunning ? runSpeed : speed;
         if (speedOverrides.Count > 0)
@@ -34,7 +36,18 @@ public class FirstPersonMovement : MonoBehaviour
             targetMovingSpeed = speedOverrides[speedOverrides.Count - 1]();
         }
 
-        Vector2 targetVelocity = new Vector2(Input.GetAxis("Horizontal") * targetMovingSpeed, Input.GetAxis("Vertical") * targetMovingSpeed);
+        Vector2 axis = Vector2.zero;
+        var kb = Keyboard.current;
+        if (kb != null)
+        {
+            if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) axis.x -= 1f;
+            if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) axis.x += 1f;
+            if (kb.sKey.isPressed || kb.downArrowKey.isPressed) axis.y -= 1f;
+            if (kb.wKey.isPressed || kb.upArrowKey.isPressed) axis.y += 1f;
+        }
+        axis = Vector2.ClampMagnitude(axis, 1f);
+
+        Vector2 targetVelocity = new Vector2(axis.x * targetMovingSpeed, axis.y * targetMovingSpeed);
         rigidbody.linearVelocity = transform.rotation * new Vector3(targetVelocity.x, rigidbody.linearVelocity.y, targetVelocity.y);
     }
 

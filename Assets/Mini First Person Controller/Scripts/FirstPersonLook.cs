@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
 
 public class FirstPersonLook : MonoBehaviour
 {
@@ -11,6 +13,7 @@ public class FirstPersonLook : MonoBehaviour
     Vector2 frameVelocity;
 
     private bool isControlEnabled = true;  // Por defecto activado
+    private bool ignorarUnFrame = false;   // descarta el salto de la cámara al reactivar el mouse-look
 
     void Reset()
     {
@@ -26,13 +29,23 @@ public class FirstPersonLook : MonoBehaviour
         }
     }
 
-    void Update()
+void Update()
     {
         if (!isControlEnabled) return;
 
         if (character == null) return;
 
-        Vector2 mouseDelta = new Vector2(Input.GetAxisRaw("Mouse X"), Input.GetAxisRaw("Mouse Y"));
+        Vector2 mouseDelta = Mouse.current != null ? Mouse.current.delta.ReadValue() : Vector2.zero;
+
+        // Al reactivar el mouse-look, descartar el primer frame: el delta acumulado
+        // mientras el cursor estuvo libre haría girar la cámara de golpe.
+        if (ignorarUnFrame)
+        {
+            ignorarUnFrame = false;
+            frameVelocity = Vector2.zero;
+            return;
+        }
+
         Vector2 rawFrameVelocity = Vector2.Scale(mouseDelta, Vector2.one * sensitivity);
         frameVelocity = Vector2.Lerp(frameVelocity, rawFrameVelocity, 1 / smoothing);
         velocity += frameVelocity;
@@ -45,6 +58,11 @@ public class FirstPersonLook : MonoBehaviour
     public void SetControlEnabled(bool enabled)
     {
         isControlEnabled = enabled;
+        if (enabled)
+        {
+            ignorarUnFrame = true;      // evita el salto de cámara al volver a explorar
+            frameVelocity = Vector2.zero;
+        }
         Debug.Log("Mirada: " + (enabled ? "ACTIVADA" : "DESACTIVADA"));
     }
 }
