@@ -247,7 +247,7 @@ public class PatientManager : MonoBehaviour
         if (DifficultyDirector.Instance != null)
             DifficultyDirector.Instance.RegistrarResultadoPaciente(salvado, slot.tiempoAtendiendo, slot.tiempoLimite, slot.errores);
         if (GameManager.Instance != null)
-            GameManager.Instance.RegistrarPacienteResuelto();
+            GameManager.Instance.RegistrarPacienteResuelto(salvado);
 
         // Alta del cuerpo: muerto desaparece, salvado se levanta y vuelve a deambular
         if (slot.cuerpo != null) { slot.cuerpo.AltaMedica(salvado); slot.cuerpo = null; }

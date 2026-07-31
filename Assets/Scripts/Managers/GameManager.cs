@@ -5,7 +5,8 @@ public enum GameState
 {
     Menu,       // Navegando menús (splash, principal, ajustes, avatar)
     EnTurno,    // Gameplay activo en la sala de urgencias
-    FinDeTurno  // Resumen del día (pantalla futura)
+    FinDeTurno, // Resumen del día (pantalla futura)
+    GameOver    // 4 pacientes perdidos consecutivos
 }
 
 // Controlador del flujo general del juego (Singleton).
@@ -20,6 +21,9 @@ public class GameManager : MonoBehaviour
     public GameState currentState = GameState.Menu;
     public int daysSurvived = 0;
     public int pacientesAtendidosHoy = 0;
+    public int rachaPerdidos = 0;
+
+    public const int MaxRachaPerdidos = 4;
 
     [Header("Configuración")]
     [Tooltip("Pacientes que hay que resolver (vivos o muertos) para completar un día")]
@@ -29,6 +33,7 @@ public class GameManager : MonoBehaviour
     public event System.Action<GameState> OnStateChanged;
     public event System.Action<int> OnDayStarted;      // número de día que inicia
     public event System.Action<int> OnDayEnded;        // días sobrevividos acumulados
+    public event System.Action OnGameOver;
 
     void Awake()
     {
@@ -44,8 +49,18 @@ public class GameManager : MonoBehaviour
     {
         daysSurvived = 0;
         pacientesAtendidosHoy = 0;
+        rachaPerdidos = 0;
+
+        // Resetear COMPLETO el Director de Dificultad: sin esto, una segunda partida
+        // hereda el performanceScore y el conteo de salvados/perdidos de la anterior
+        // (dificultad injusta y scores contaminados en la tabla de puntuaciones).
         if (DifficultyDirector.Instance != null)
+        {
             DifficultyDirector.Instance.diaActual = 1;
+            DifficultyDirector.Instance.performanceScore = 0.5f;
+            DifficultyDirector.Instance.pacientesSalvados = 0;
+            DifficultyDirector.Instance.pacientesPerdidos = 0;
+        }
 
         CambiarEstado(GameState.EnTurno);
         StartNewDay();
@@ -61,13 +76,47 @@ public class GameManager : MonoBehaviour
     }
 
     // Lo llama PatientManager cada vez que un paciente se resuelve (salvado o perdido)
-    public void RegistrarPacienteResuelto()
+    public void RegistrarPacienteResuelto(bool salvado)
     {
-        if (currentState != GameState.EnTurno) return;
+        try
+        {
+            Debug.Log("[GameManager] RegistrarPacienteResuelto(salvado=" + salvado + ") state=" + currentState + " racha=" + rachaPerdidos);
 
-        pacientesAtendidosHoy++;
-        if (pacientesAtendidosHoy >= pacientesPorDia)
-            EndDay();
+            // RACHA: SIEMPRE se actualiza, sin importar el estado del juego.
+            // Así aunque un paciente se resuelva en un momento extraño, la racha no se pierde.
+            if (salvado)
+                rachaPerdidos = 0;
+            else
+                rachaPerdidos++;
+
+            Debug.Log("[GameManager] -> racha ahora = " + rachaPerdidos + " (max=" + MaxRachaPerdidos + ")");
+            if (rachaPerdidos >= MaxRachaPerdidos && currentState == GameState.EnTurno)
+            {
+                Debug.Log("[GameManager] GAME OVER: " + rachaPerdidos + " pacientes perdidos consecutivos.");
+                CambiarEstado(GameState.GameOver);
+                Debug.Log("[GameManager] Estado cambiado a GameOver, invocando OnGameOver...");
+                if (OnGameOver != null)
+                {
+                    OnGameOver.Invoke();
+                    Debug.Log("[GameManager] OnGameOver invocado.");
+                }
+                else
+                {
+                    Debug.LogWarning("[GameManager] OnGameOver no tiene suscriptores!");
+                }
+                return;
+            }
+
+            if (currentState != GameState.EnTurno) return;
+
+            pacientesAtendidosHoy++;
+            if (pacientesAtendidosHoy >= pacientesPorDia)
+                EndDay();
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError("[GameManager] Excepción en RegistrarPacienteResuelto: " + e.Message + "\n" + e.StackTrace);
+        }
     }
 
     public void EndDay()
@@ -86,6 +135,7 @@ public class GameManager : MonoBehaviour
     {
         pacientesAtendidosHoy = 0;
         daysSurvived = 0;
+        rachaPerdidos = 0;
         if (DifficultyDirector.Instance != null)
             DifficultyDirector.Instance.diaActual = 1;
         StartNewDay();

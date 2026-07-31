@@ -130,7 +130,7 @@ public class AchievementManager : MonoBehaviour
         var sb = new System.Text.StringBuilder();
         foreach (var a in achievements)
         {
-            string icono = a.unlocked ? "★" : "🔒"; // estrella o candado
+            string icono = a.unlocked ? "★" : "☆";
             int prog = Mathf.Min(GetProgreso(a.metrica), a.requirement);
             sb.AppendLine(icono + "  <b>" + a.title + "</b>  <size=70%>(" + prog + "/" + a.requirement + ")</size>");
             sb.AppendLine("<size=60%>" + a.description + "</size>");

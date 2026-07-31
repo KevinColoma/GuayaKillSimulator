@@ -16,6 +16,19 @@ public class PatientBody : MonoBehaviour
     [Tooltip("Velocidad de la transición al subir/bajar de la camilla.")]
     public float velocidadAcomodo = 3f;
 
+    [Header("Velocidad al dirigirse a la camilla")]
+    [Tooltip("Velocidad base (m/s) al caminar hacia la camilla. Es independiente de la de deambular: " +
+             "un herido que llega a urgencias va con prisa.")]
+    public float velocidadCaminarBase = 3.5f;
+    [Tooltip("Multiplicadores de velocidad según el nivel de la IA de dificultad.")]
+    public float multFacil = 1f;
+    public float multNormal = 1.2f;
+    public float multDificil = 1.7f;
+    public float multInfernal = 2.6f;
+
+    // Multiplicador vigente para este traslado (se fija al ser asignado como paciente)
+    float multiplicadorActual = 1f;
+
     NavMeshAgent agente;
     NPCWanderAI wander;
     PatientHighlight highlight;
@@ -48,14 +61,37 @@ public class PatientBody : MonoBehaviour
         if (wander != null) wander.enabled = false;
         if (highlight != null) highlight.Activar();  // resaltar la silueta roja del herido
 
+        // Velocidad propia del traslado, escalada por el nivel de la IA de dificultad:
+        // en Infernal los heridos entran casi corriendo a la camilla.
+        multiplicadorActual = MultiplicadorPorDificultad();
+
         puntoAcercamiento = estacion.PuntoAcercamiento();
         if (agente.isOnNavMesh)
         {
             agente.isStopped = false;
             agente.stoppingDistance = 0.3f;
+            agente.speed = velocidadCaminarBase * multiplicadorActual;
+            // Aceleración y giro también escalan: sin esto, en tramos cortos el agente
+            // nunca alcanzaría la velocidad alta y el aumento no se notaría.
+            agente.acceleration = 20f * multiplicadorActual;
+            agente.angularSpeed = 500f;
             agente.SetDestination(puntoAcercamiento);
         }
         estado = Estado.Caminando;
+    }
+
+    // Multiplicador de velocidad según el nivel vigente del Director de Dificultad.
+    float MultiplicadorPorDificultad()
+    {
+        var dd = DifficultyDirector.Instance;
+        if (dd == null) return multNormal;
+        switch (dd.currentTier)
+        {
+            case DifficultyTier.Facil: return multFacil;
+            case DifficultyTier.Dificil: return multDificil;
+            case DifficultyTier.Infernal: return multInfernal;
+            default: return multNormal;
+        }
     }
 
     void Update()
@@ -68,7 +104,10 @@ public class PatientBody : MonoBehaviour
                 if (!agente.pathPending)
                 {
                     bool rutaLista = agente.remainingDistance <= agente.stoppingDistance + 0.25f;
-                    bool casiQuieto = agente.velocity.sqrMagnitude < 0.06f;
+                    // La tolerancia de "ya frenó" escala con la velocidad del traslado: a
+                    // velocidad alta el umbral fijo era tan estricto que el paciente podía
+                    // quedarse orbitando la camilla sin llegar a acostarse nunca.
+                    bool casiQuieto = agente.velocity.sqrMagnitude < 0.06f * multiplicadorActual;
                     bool cercaFisico = Vector3.Distance(transform.position, puntoAcercamiento) < 1.4f;
                     if (rutaLista && casiQuieto && cercaFisico)
                         IniciarAcomodo();
@@ -76,9 +115,10 @@ public class PatientBody : MonoBehaviour
                 break;
 
             case Estado.Acomodandose:
-                // Interpolar suavemente hacia la pose de acostado sobre la camilla
-                transform.position = Vector3.MoveTowards(transform.position, posAcostado, velocidadAcomodo * Time.deltaTime);
-                transform.rotation = Quaternion.RotateTowards(transform.rotation, rotAcostado, velocidadAcomodo * 90f * Time.deltaTime);
+                // Interpolar hacia la pose de acostado (también más rápido en niveles altos)
+                float vAcomodo = velocidadAcomodo * multiplicadorActual;
+                transform.position = Vector3.MoveTowards(transform.position, posAcostado, vAcomodo * Time.deltaTime);
+                transform.rotation = Quaternion.RotateTowards(transform.rotation, rotAcostado, vAcomodo * 90f * Time.deltaTime);
                 if (Vector3.Distance(transform.position, posAcostado) < 0.02f)
                 {
                     transform.position = posAcostado;

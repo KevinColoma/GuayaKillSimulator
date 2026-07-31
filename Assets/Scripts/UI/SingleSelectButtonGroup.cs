@@ -66,7 +66,6 @@ public class SingleSelectButtonGroup : MonoBehaviour
 
             if (preservarColorBoton)
             {
-                // Resalta con borde blanco + un pelín más grande, sin tapar el color del botón
                 var outline = botones[i].GetComponent<Outline>();
                 if (outline == null) outline = botones[i].gameObject.AddComponent<Outline>();
                 outline.effectColor = Color.white;
@@ -78,7 +77,27 @@ public class SingleSelectButtonGroup : MonoBehaviour
             {
                 var img = botones[i].GetComponent<Image>();
                 if (img != null)
+                {
                     img.color = sel ? colorSeleccionado : colorNormal;
+                    UIContrast.AplicarATextos(botones[i], img.color);
+                }
+                // Contorno blanco en los textos (TMP material outline) al estar seleccionado
+                foreach (var txt in botones[i].GetComponentsInChildren<TMPro.TextMeshProUGUI>(true))
+                {
+                    if (txt.fontMaterial == txt.fontSharedMaterial)
+                        txt.fontMaterial = new Material(txt.fontSharedMaterial);
+                    if (sel)
+                    {
+                        txt.fontMaterial.EnableKeyword("OUTLINE_ON");
+                        txt.fontMaterial.SetFloat("_OutlineWidth", 0.35f);
+                        txt.fontMaterial.SetColor("_OutlineColor", Color.white);
+                    }
+                    else
+                    {
+                        txt.fontMaterial.DisableKeyword("OUTLINE_ON");
+                        txt.fontMaterial.SetFloat("_OutlineWidth", 0f);
+                    }
+                }
             }
         }
     }

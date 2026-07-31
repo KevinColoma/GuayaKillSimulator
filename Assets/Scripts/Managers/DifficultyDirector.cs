@@ -43,7 +43,7 @@ public class DifficultyDirector : MonoBehaviour
     [Header("Umbrales de nivel")]
     public float umbralFacil = 0.3f;
     public float umbralDificil = 0.6f;
-    public float umbralInfernal = 0.85f;
+    public float umbralInfernal = 0.75f;
 
     public event System.Action<DifficultyTier> OnDifficultyChanged;
     public event System.Action<float> OnPerformanceUpdated;

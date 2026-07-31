@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.AI;
+using System.Collections;
 using System.Collections.Generic;
 
 // Inventario de herramientas médicas con usos limitados (documento de diseño).
@@ -26,6 +28,8 @@ public class MedicalToolsManager : MonoBehaviour
     public event System.Action OnInventarioCambiado;
     public event System.Action<string, bool, string> OnHerramientaUsada; // nombre, éxito, mensaje
 
+    public void NotificarCambioInventario() => OnInventarioCambiado?.Invoke();
+
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -37,6 +41,39 @@ public class MedicalToolsManager : MonoBehaviour
     {
         if (GameManager.Instance != null)
             GameManager.Instance.OnDayEnded += _ => RestockTools();
+        StartCoroutine(CicloPickups());
+    }
+
+    IEnumerator CicloPickups()
+    {
+        float spawnY = 0.8f;
+        while (true)
+        {
+            var pickups = GameObject.FindObjectsByType<ToolPickup>(FindObjectsSortMode.None);
+            int actuales = pickups.Length;
+            int objetivo = 50;
+            int enPrimerPiso = 0;
+            foreach (var p in pickups)
+                if (Mathf.Abs(p.transform.position.y - spawnY) < 1.5f) enPrimerPiso++;
+            if (actuales < objetivo)
+            {
+                int restantes = objetivo - actuales;
+                int necesariosP1 = 30 - enPrimerPiso;
+                for (int i = 0; i < restantes; i++)
+                {
+                    float rango = (i < necesariosP1) ? 40f : 50f;
+                    Vector3 origen = new Vector3(
+                        Random.Range(-rango, rango), 5f, Random.Range(-rango, rango));
+                    if (NavMesh.SamplePosition(origen, out var hit, 15f, NavMesh.AllAreas))
+                    {
+                        bool enP1 = Mathf.Abs(hit.position.y) < 1f;
+                        if (i < necesariosP1 && !enP1) continue;
+                        ToolPickup.Crear(hit.position + Vector3.up * spawnY);
+                    }
+                }
+            }
+            yield return new WaitForSeconds(4f);
+        }
     }
 
     // Público y re-llamable: al iniciar el turno se vuelve a invocar con la personalización
@@ -73,6 +110,8 @@ public class MedicalToolsManager : MonoBehaviour
             t.cantidad = t.cantidadMaxima;
         OnInventarioCambiado?.Invoke();
         Debug.Log("[MedicalTools] Inventario reabastecido para el nuevo día.");
+        if (UIManager.Instance != null)
+            UIManager.Instance.MostrarNarrador("Suministros reabastecidos. Aprovéchalos, que aquí nada dura.", 4f);
     }
 
     // Núcleo del sistema: aplicar una herramienta al paciente actual
@@ -81,32 +120,24 @@ bool EsHerramientaDePrecision(string nombre)
         return nombre == "Pinzas" || nombre == "Suturas" || nombre == "Torniquete";
     }
 
-    // Gasas/Alcohol/Kit son herramientas de apoyo: en Fácil/Normal se aplican al toque,
-    // pero en Difícil/Infernal también exigen su propio minijuego (el juego se pone
-    // exigente con TODAS las herramientas, no solo con las "correctas").
-    bool EsHerramientaDeApoyoConMinijuego(string nombre)
+    // Paciente de alto riesgo: crítico o casi muerto. Candidato a complicación inmediata.
+    bool EsPacienteRiesgo(Patient p)
     {
-        if (nombre != "Gasas" && nombre != "Alcohol" && nombre != "Kit") return false;
-        var director = DifficultyDirector.Instance;
-        if (director == null) return false;
-        return director.currentTier == DifficultyTier.Dificil || director.currentTier == DifficultyTier.Infernal;
-    }
-
-    // Paciente de alto riesgo en INFERNAL: crítico o casi muerto. Candidato a complicarse.
-    bool EsRiesgoAltoInfernal(Patient p)
-    {
-        var director = DifficultyDirector.Instance;
-        if (director == null || director.currentTier != DifficultyTier.Infernal) return false;
         return p.severidad == Severidad.Critico || p.health < p.maxHealth * 0.35f;
     }
 
-    // Solo en INFERNAL: un paciente de alto riesgo (crítico o casi muerto) puede
-    // "complicarse" tras un procedimiento exitoso -> exige un SEGUNDO minijuego
-    // (aleatorio) antes de estabilizarse. 50% de probabilidad, para que no sea rutina.
+    // Todo paciente en Dificil/Infernal se complica tras un procedimiento exitoso.
+    // En Normal hay 50% de probabilidad si es de alto riesgo.
+    // El minijuego sorpresa se elige al azar entre Gasas, Alcohol y Kit.
     bool RequiereComplicacion(Patient p)
     {
-        // La probabilidad baja si el pasante usa mascarilla (menos riesgo de infección)
-        return EsRiesgoAltoInfernal(p) && Random.value < RunConfig.ProbabilidadComplicacion();
+        var director = DifficultyDirector.Instance;
+        if (director == null) return false;
+        if (director.currentTier == DifficultyTier.Dificil || director.currentTier == DifficultyTier.Infernal)
+            return true;
+        if (director.currentTier == DifficultyTier.Normal)
+            return EsPacienteRiesgo(p) && Random.value < 0.5f;
+        return false;
     }
 
     // Colores del banner de aviso del minijuego
@@ -117,7 +148,8 @@ bool EsHerramientaDePrecision(string nombre)
     // con un banner arriba del minijuego (para que el jugador sepa que puede venir otro).
     void AvisarSiRiesgoAlto(Patient p)
     {
-        if (EsRiesgoAltoInfernal(p) && MiniGameManager.Instance != null)
+        if (EsPacienteRiesgo(p) && MiniGameManager.Instance != null && DifficultyDirector.Instance != null
+            && DifficultyDirector.Instance.currentTier >= DifficultyTier.Dificil)
             MiniGameManager.Instance.AnunciarProximoProcedimiento(
                 "⚠ PACIENTE DE ALTO RIESGO — puede requerir hasta " + MaxProcedimientos + " procedimientos", ColorAvisoRiesgo);
     }
@@ -215,14 +247,7 @@ bool EsHerramientaDePrecision(string nombre)
             }
         }
 
-        // No permitir usar herramientas mientras un minijuego de precisión está activo
-        if (MiniGameManager.Instance != null && MiniGameManager.Instance.EnCurso)
-        {
-            OnHerramientaUsada?.Invoke(nombre, false, "Termina el procedimiento primero.");
-            return false;
-        }
-
-        // Caso especial: Oración — 5% base, 30% con el rasgo "Creyente"
+        // CASO ESPECIAL: Oración — funciona incluso durante un minijuego en curso
         if (nombre == "Oración")
         {
             float probabilidad = RunConfig.rasgoElegido == RasgoInicial.Creyente ? 0.30f : 0.05f;
@@ -241,6 +266,13 @@ bool EsHerramientaDePrecision(string nombre)
             }
             OnInventarioCambiado?.Invoke();
             return true;
+        }
+
+        // No permitir usar herramientas mientras un minijuego está activo
+        if (MiniGameManager.Instance != null && MiniGameManager.Instance.EnCurso)
+        {
+            OnHerramientaUsada?.Invoke(nombre, false, "Termina el procedimiento primero.");
+            return false;
         }
 
         if (!tool.reutilizable) tool.cantidad--;
@@ -270,33 +302,6 @@ bool EsHerramientaDePrecision(string nombre)
                 if (resultado.success)
                 {
                     ResolverProcedimientoExitoso(nombre, slotRef, pacienteRef, pacienteRef.maxHealth);
-                }
-                else
-                {
-                    pacienteRef.AplicarDanio(resultado.damageIfFailed);
-                    slotRef.errores++;
-                    OnHerramientaUsada?.Invoke(nombre, false, resultado.failureMessage);
-                    OnInventarioCambiado?.Invoke();
-                }
-            });
-            return true;
-        }
-
-        // Herramienta de apoyo (Gasas/Alcohol/Kit) en Difícil/Infernal -> también lanza minijuego
-        if (!esCorrecta && EsHerramientaDeApoyoConMinijuego(nombre) && MiniGameManager.Instance != null)
-        {
-            var slotRef = slot;
-            var pacienteRef = paciente;
-            slotRef.minijuegoActivo = true;
-            OnInventarioCambiado?.Invoke();
-            AvisarSiRiesgoAlto(pacienteRef);
-            MiniGameManager.Instance.JugarHerramienta(nombre, pacienteRef, resultado =>
-            {
-                slotRef.minijuegoActivo = false;
-                if (slotRef.paciente != pacienteRef) return; // ya se resolvió/cambió el paciente
-                if (resultado.success)
-                {
-                    ResolverProcedimientoExitoso(nombre, slotRef, pacienteRef, curacion);
                 }
                 else
                 {

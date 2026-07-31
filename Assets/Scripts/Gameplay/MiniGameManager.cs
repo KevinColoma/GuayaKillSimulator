@@ -25,7 +25,21 @@ public class MiniGameManager : MonoBehaviour
     [Tooltip("Canvas donde se dibuja el minijuego. Si es null busca 'MenuCanvas'.")]
     public Canvas canvasRaiz;
 
-    public bool EnCurso { get; private set; }
+    public static event System.Action OnMiniGameStarted;
+    public static event System.Action OnMiniGameEnded;
+
+    bool _enCurso;
+    public bool EnCurso
+    {
+        get => _enCurso;
+        private set
+        {
+            if (_enCurso == value) return;
+            _enCurso = value;
+            if (_enCurso) OnMiniGameStarted?.Invoke();
+            else OnMiniGameEnded?.Invoke();
+        }
+    }
 
     GameObject overlay;
 
@@ -44,8 +58,12 @@ public class MiniGameManager : MonoBehaviour
     // más rápido y hay menos tiempo para completarlos.
     bool EsInfernal => DifficultyDirector.Instance != null
         && DifficultyDirector.Instance.currentTier == DifficultyTier.Infernal;
-    float FactorVelocidad => EsInfernal ? 1.5f : 1f;  // movimiento/oscilación/temblor
+    bool EsDificilOInfernal => DifficultyDirector.Instance != null
+        && (DifficultyDirector.Instance.currentTier == DifficultyTier.Dificil
+            || DifficultyDirector.Instance.currentTier == DifficultyTier.Infernal);
+    float FactorVelocidad => EsInfernal ? 2.0f : 1f;  // movimiento/oscilación/temblor
     float FactorTiempo => EsInfernal ? 0.7f : 1f;     // límites de tiempo más cortos
+    float FactorRango => EsInfernal ? 1.5f : 1f;      // rango de oscilación/drift de elementos
 
     void Awake()
     {
@@ -70,6 +88,12 @@ public class MiniGameManager : MonoBehaviour
             onComplete?.Invoke(new MiniGameResult { success = false, damageIfFailed = 0f, failureMessage = "Ya hay un procedimiento en curso." });
             return;
         }
+        // En Difícil/Infernal, 40% de probabilidad de jugar Punzada en vez del minijuego específico
+        if (EsDificilOInfernal && Random.value < 0.4f)
+        {
+            StartCoroutine(Punzada(paciente, onComplete));
+            return;
+        }
         switch (tipo)
         {
             case TipoHerida.Bala: StartCoroutine(ExtraccionBala(paciente, onComplete)); break;
@@ -82,6 +106,7 @@ public class MiniGameManager : MonoBehaviour
     // dificultad Difícil/Infernal también exigen un minijuego, sin importar el tipo de herida.
     public void JugarHerramienta(string nombreHerramienta, Patient paciente, System.Action<MiniGameResult> onComplete)
     {
+        Debug.Log("[MINIGAME] JugarHerramienta llamado para " + nombreHerramienta + " EnCurso=" + EnCurso + " canvasRaiz=" + (canvasRaiz != null));
         if (EnCurso)
         {
             onComplete?.Invoke(new MiniGameResult { success = false, damageIfFailed = 0f, failureMessage = "Ya hay un procedimiento en curso." });
@@ -89,9 +114,9 @@ public class MiniGameManager : MonoBehaviour
         }
         switch (nombreHerramienta)
         {
-            case "Gasas": StartCoroutine(PresionSostenida(paciente, onComplete)); break;
-            case "Alcohol": StartCoroutine(LimpiezaHerida(paciente, onComplete)); break;
-            case "Kit": StartCoroutine(SecuenciaAuxilio(paciente, onComplete)); break;
+            case "Gasas": Debug.Log("[MINIGAME] Lanzando PresionSostenida"); StartCoroutine(PresionSostenida(paciente, onComplete)); break;
+            case "Alcohol": Debug.Log("[MINIGAME] Lanzando LimpiezaHerida"); StartCoroutine(LimpiezaHerida(paciente, onComplete)); break;
+            case "Kit": Debug.Log("[MINIGAME] Lanzando SecuenciaAuxilio"); StartCoroutine(SecuenciaAuxilio(paciente, onComplete)); break;
             default: onComplete?.Invoke(new MiniGameResult { success = true }); break;
         }
     }
@@ -136,6 +161,11 @@ public class MiniGameManager : MonoBehaviour
 
         while (result == null)
         {
+            // Congelar el minijuego mientras el juego está en pausa (Esc): los minijuegos
+            // usan tiempo unscaled, así que sin esta guarda seguirían corriendo (y podrías
+            // perder al paciente) con el menú de pausa encima.
+            if (Time.timeScale == 0f) { yield return null; continue; }
+
             tiempo += Time.unscaledDeltaTime;
 
             // Posición del puntero -> local a la zona + temblor
@@ -211,11 +241,16 @@ public class MiniGameManager : MonoBehaviour
         float tiempo = 0f;
         float limite = 12f * FactorTiempo;
         float oscilacionVel = 3f * FactorVelocidad;
-        float oscilacionAmp = 18f * FactorVelocidad;
+        float oscilacionAmp = 18f * FactorRango;
         MiniGameResult result = null;
 
         while (result == null)
         {
+            // Congelar el minijuego mientras el juego está en pausa (Esc): los minijuegos
+            // usan tiempo unscaled, así que sin esta guarda seguirían corriendo (y podrías
+            // perder al paciente) con el menú de pausa encima.
+            if (Time.timeScale == 0f) { yield return null; continue; }
+
             tiempo += Time.unscaledDeltaTime;
 
             // Distracción: el paciente se mueve (los puntos oscilan; en Infernal, más rápido y amplio)
@@ -274,6 +309,11 @@ public class MiniGameManager : MonoBehaviour
 
         while (result == null)
         {
+            // Congelar el minijuego mientras el juego está en pausa (Esc): los minijuegos
+            // usan tiempo unscaled, así que sin esta guarda seguirían corriendo (y podrías
+            // perder al paciente) con el menú de pausa encima.
+            if (Time.timeScale == 0f) { yield return null; continue; }
+
             tiempo += Time.unscaledDeltaTime;
             pos += dir * velocidad * Time.unscaledDeltaTime;
             if (pos >= 1f) { pos = 1f; dir = -1; }
@@ -315,7 +355,9 @@ public class MiniGameManager : MonoBehaviour
     // lentamente; hay que perseguirla con la gasa para mantener la presión.
     IEnumerator PresionSostenida(Patient paciente, System.Action<MiniGameResult> onComplete)
     {
+        Debug.Log("[MINIGAME] PresionSostenida INICIADO");
         EnCurso = true;
+        Debug.Log("[MINIGAME] EnCurso=" + EnCurso + " canvasRaiz=" + (canvasRaiz != null) + " canvasRaiz.name=" + (canvasRaiz != null ? canvasRaiz.name : "null"));
         var root = CrearOverlay("PRESIÓN SOSTENIDA", "Persigue la herida (rojo) con la gasa y mantén el contacto para llenar la barra antes de que acabe el tiempo.");
 
         var zona = CrearPanel("Zona", root.transform, new Vector2(0.25f, 0.25f), new Vector2(0.75f, 0.72f), new Color(0.1f, 0.1f, 0.13f, 0.9f));
@@ -337,17 +379,24 @@ public class MiniGameManager : MonoBehaviour
         float tiempo = 0f;
         float limite = 7f * FactorTiempo;
         Vector2 velocidadDrift = new Vector2(Random.Range(-60f, 60f), Random.Range(-40f, 40f)) * FactorVelocidad;
+        float limiteDriftX = 260f * FactorRango;
+        float limiteDriftY = 150f * FactorRango;
         MiniGameResult result = null;
 
         while (result == null)
         {
+            // Congelar el minijuego mientras el juego está en pausa (Esc): los minijuegos
+            // usan tiempo unscaled, así que sin esta guarda seguirían corriendo (y podrías
+            // perder al paciente) con el menú de pausa encima.
+            if (Time.timeScale == 0f) { yield return null; continue; }
+
             tiempo += Time.unscaledDeltaTime;
 
             Vector2 posObjetivo = objetivoRT.anchoredPosition + velocidadDrift * Time.unscaledDeltaTime;
-            if (posObjetivo.x > 260f || posObjetivo.x < -260f) velocidadDrift.x *= -1f;
-            if (posObjetivo.y > 150f || posObjetivo.y < -150f) velocidadDrift.y *= -1f;
-            posObjetivo.x = Mathf.Clamp(posObjetivo.x, -260f, 260f);
-            posObjetivo.y = Mathf.Clamp(posObjetivo.y, -150f, 150f);
+            if (posObjetivo.x > limiteDriftX || posObjetivo.x < -limiteDriftX) velocidadDrift.x *= -1f;
+            if (posObjetivo.y > limiteDriftY || posObjetivo.y < -limiteDriftY) velocidadDrift.y *= -1f;
+            posObjetivo.x = Mathf.Clamp(posObjetivo.x, -limiteDriftX, limiteDriftX);
+            posObjetivo.y = Mathf.Clamp(posObjetivo.y, -limiteDriftY, limiteDriftY);
             objetivoRT.anchoredPosition = posObjetivo;
 
             Vector2 local;
@@ -417,6 +466,11 @@ public class MiniGameManager : MonoBehaviour
 
         while (result == null)
         {
+            // Congelar el minijuego mientras el juego está en pausa (Esc): los minijuegos
+            // usan tiempo unscaled, así que sin esta guarda seguirían corriendo (y podrías
+            // perder al paciente) con el menú de pausa encima.
+            if (Time.timeScale == 0f) { yield return null; continue; }
+
             tiempo += Time.unscaledDeltaTime;
 
             Vector2 local;
@@ -501,6 +555,11 @@ public class MiniGameManager : MonoBehaviour
 
         while (result == null)
         {
+            // Congelar el minijuego mientras el juego está en pausa (Esc): los minijuegos
+            // usan tiempo unscaled, así que sin esta guarda seguirían corriendo (y podrías
+            // perder al paciente) con el menú de pausa encima.
+            if (Time.timeScale == 0f) { yield return null; continue; }
+
             tiempo += Time.unscaledDeltaTime;
 
             if (idxClick >= 0)
@@ -526,6 +585,99 @@ public class MiniGameManager : MonoBehaviour
         }
 
         CerrarOverlay(result.success ? "¡Auxilio aplicado!" : result.failureMessage, result.success);
+        yield return new WaitForSecondsRealtime(0.8f);
+        LimpiarOverlay();
+        EnCurso = false;
+        onComplete?.Invoke(result);
+    }
+
+    // ============================ MINIJUEGO 7: PUNZADA (alternativa aleatoria) ============================
+    IEnumerator Punzada(Patient paciente, System.Action<MiniGameResult> onComplete)
+    {
+        EnCurso = true;
+        var root = CrearOverlay("PUNZADA", "Presiona clic cuando la aguja esté en la zona verde. 3 aciertos.");
+
+        var zona = CrearPanel("Zona", root.transform, new Vector2(0.25f, 0.3f), new Vector2(0.75f, 0.7f), new Color(0.1f, 0.1f, 0.13f, 0.9f));
+
+        float targetCenter = Random.Range(-180f, 180f);
+        float targetWidth = 60f;
+        var target = CrearPanel("ZonaObjetivo", zona.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Color(0.2f, 0.9f, 0.4f, 0.5f));
+        var targetRT = target.GetComponent<RectTransform>();
+        targetRT.sizeDelta = new Vector2(targetWidth, 60);
+        targetRT.anchoredPosition = new Vector2(targetCenter, 0);
+
+        var aguja = CrearPanel("Aguja", zona.transform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Color(1f, 0.3f, 0.2f, 1f));
+        var agujaRT = aguja.GetComponent<RectTransform>();
+        agujaRT.sizeDelta = new Vector2(10, 70);
+
+        var timerFill = CrearPanel("Timer", root.transform, new Vector2(0.3f, 0.18f), new Vector2(0.7f, 0.22f), new Color(0.9f, 0.3f, 0.2f, 1f));
+        var timerRT = timerFill.GetComponent<RectTransform>();
+
+        var aciertosTxt = CrearTexto("Aciertos", root.transform, new Vector2(0.1f, 0.12f), new Vector2(0.9f, 0.16f), 28, TextAlignmentOptions.Center);
+        aciertosTxt.text = "Aciertos: 0 / 3";
+        aciertosTxt.color = Color.white;
+
+        int aciertos = 0;
+        float tiempo = 0f;
+        float limite = 10f * FactorTiempo;
+        float vel = 180f * FactorVelocidad;
+        float rangoAguja = 230f * FactorRango;
+        float esperaClick = 0f;
+        bool puedeClick = true;
+        MiniGameResult result = null;
+
+        while (result == null)
+        {
+            if (Time.timeScale == 0f) { yield return null; continue; }
+            tiempo += Time.unscaledDeltaTime;
+
+            if (!puedeClick)
+            {
+                esperaClick -= Time.unscaledDeltaTime;
+                if (esperaClick <= 0f) puedeClick = true;
+            }
+
+            float posX = Mathf.Sin(Time.unscaledTime * vel * 0.01f) * rangoAguja;
+            agujaRT.anchoredPosition = new Vector2(posX, 0);
+
+            bool enZona = Mathf.Abs(posX - targetCenter) < targetWidth * 0.5f;
+            aguja.GetComponent<Image>().color = enZona ? new Color(0.2f, 1f, 0.4f, 1f) : new Color(1f, 0.3f, 0.2f, 1f);
+
+            if (puedeClick && Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                puedeClick = false;
+                aguja.GetComponent<Image>().color = Color.white;
+                if (enZona)
+                {
+                    aciertos++;
+                    aciertosTxt.text = "Aciertos: " + aciertos + " / 3";
+                    if (aciertos >= 3)
+                        result = new MiniGameResult { success = true };
+                    else
+                    {
+                        targetCenter = Random.Range(-180f, 180f);
+                        targetRT.anchoredPosition = new Vector2(targetCenter, 0);
+                        esperaClick = 0.3f;
+                    }
+                }
+                else
+                {
+                    result = new MiniGameResult { success = false, damageIfFailed = 15f, failureMessage = "¡Punzada fallida! La aguja se desvió." };
+                }
+            }
+            else if (!puedeClick && aguja.GetComponent<Image>().color == Color.white)
+            {
+                aguja.GetComponent<Image>().color = enZona ? new Color(0.2f, 1f, 0.4f, 1f) : new Color(1f, 0.3f, 0.2f, 1f);
+            }
+
+            if (tiempo >= limite && result == null)
+                result = new MiniGameResult { success = false, damageIfFailed = 15f, failureMessage = "Te quedaste sin tiempo." };
+
+            timerRT.localScale = new Vector3(1f - tiempo / limite, 1, 1);
+            yield return null;
+        }
+
+        CerrarOverlay(result.success ? "¡Punzada exacta!" : result.failureMessage, result.success);
         yield return new WaitForSecondsRealtime(0.8f);
         LimpiarOverlay();
         EnCurso = false;

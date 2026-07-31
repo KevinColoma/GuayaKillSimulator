@@ -22,11 +22,13 @@ public class UIManager : MonoBehaviour
     TextMeshProUGUI diasContador;
     TextMeshProUGUI narrador;
     Image barraVidaFill;
+    TextMeshProUGUI hpLabel;
     // Segundo panel: el OTRO paciente (para triaje con 2 camillas)
     GameObject panelPaciente2;
     TextMeshProUGUI pacienteInfo2;
     TextMeshProUGUI cronometro2;
     Image barraVidaFill2;
+    TextMeshProUGUI hpLabel2;
     readonly Dictionary<string, TextMeshProUGUI> etiquetasHerramientas = new Dictionary<string, TextMeshProUGUI>();
     string[] toolbarOrden;
     float narradorHasta;
@@ -115,8 +117,10 @@ public class UIManager : MonoBehaviour
             if (narrador != null && Time.unscaledTime > narradorHasta && !string.IsNullOrEmpty(narrador.text))
                 narrador.text = "";
 
-            // Comentarios ambientales aleatorios cuando el narrador está libre (no pisa otros mensajes)
+            // Comentarios ambientales aleatorios cuando el narrador está libre (no pisa otros
+            // mensajes, ni aparece con el juego pausado o un minijuego en curso)
             if (narrador != null && string.IsNullOrEmpty(narrador.text) && Time.unscaledTime > proximoComentarioIdle
+                && Time.timeScale > 0f
                 && (MiniGameManager.Instance == null || !MiniGameManager.Instance.EnCurso))
             {
                 MostrarNarrador(ComentariosIdle[Random.Range(0, ComentariosIdle.Length)], 5f);
@@ -127,12 +131,16 @@ public class UIManager : MonoBehaviour
 
             // Atajos de teclado 1-7 para usar herramientas (el cursor está bloqueado por el mouse-look)
             var kb = Keyboard.current;
-            if (kb != null && MedicalToolsManager.Instance != null && toolbarOrden != null
-                && (MiniGameManager.Instance == null || !MiniGameManager.Instance.EnCurso))
+            if (kb != null && MedicalToolsManager.Instance != null && toolbarOrden != null)
             {
+                bool enCurso = MiniGameManager.Instance != null && MiniGameManager.Instance.EnCurso;
                 for (int i = 0; i < toolbarOrden.Length && i < 7; i++)
-                    if (TeclaNumero(kb, i + 1))
-                        MedicalToolsManager.Instance.UseTool(toolbarOrden[i]);
+                {
+                    if (!TeclaNumero(kb, i + 1)) continue;
+                    // Oración (índice 6/tecla 7) funciona incluso durante minijuegos
+                    if (enCurso && toolbarOrden[i] != "Oración") continue;
+                    MedicalToolsManager.Instance.UseTool(toolbarOrden[i]);
+                }
             }
         }
     }
@@ -191,7 +199,7 @@ public class UIManager : MonoBehaviour
 
         if (enfocado != null && enfocado.paciente != null)
         {
-            PintarSlot(enfocado, pacienteInfo, cronometro, barraVidaFill, true);
+            PintarSlot(enfocado, pacienteInfo, cronometro, barraVidaFill, true, hpLabel);
         }
         else
         {
@@ -210,10 +218,10 @@ public class UIManager : MonoBehaviour
 
         if (panelPaciente2 != null) panelPaciente2.SetActive(otro != null);
         if (otro != null)
-            PintarSlot(otro, pacienteInfo2, cronometro2, barraVidaFill2, false);
+            PintarSlot(otro, pacienteInfo2, cronometro2, barraVidaFill2, false, hpLabel2);
     }
 
-    void PintarSlot(PatientManager.Slot slot, TextMeshProUGUI info, TextMeshProUGUI crono, Image barra, bool completo)
+    void PintarSlot(PatientManager.Slot slot, TextMeshProUGUI info, TextMeshProUGUI crono, Image barra, bool completo, TextMeshProUGUI hp = null)
     {
         var p = slot.paciente;
         float pct = p.health / p.maxHealth;
@@ -237,8 +245,18 @@ public class UIManager : MonoBehaviour
         if (barra != null)
         {
             barra.fillAmount = pct;
-            barra.color = pct > 0.55f ? VERDE : (pct > 0.25f ? AMARILLO : ROJO);
+            Color baseColor = pct < 0.5f
+                ? Color.Lerp(ROJO, AMARILLO, pct * 2f)
+                : Color.Lerp(AMARILLO, VERDE, (pct - 0.5f) * 2f);
+            if (pct < 0.25f)
+            {
+                float pulso = Mathf.Sin(Time.unscaledTime * 10f) * 0.35f + 0.65f;
+                baseColor.a = pulso;
+            }
+            barra.color = baseColor;
         }
+        if (hp != null)
+            hp.text = Mathf.CeilToInt(p.health) + "/" + Mathf.CeilToInt(p.maxHealth);
     }
 
     void ActualizarEtiquetasHerramientas()
@@ -248,10 +266,18 @@ public class UIManager : MonoBehaviour
         foreach (var t in tools.herramientas)
         {
             if (!etiquetasHerramientas.ContainsKey(t.nombre)) continue;
-            string cant = t.nombre == "Oración" ? "5%" : (t.reutilizable ? "∞" : t.cantidad.ToString());
+            bool agotado = !t.reutilizable && t.cantidad <= 0 && t.nombre != "Oración";
+            string cant = t.nombre == "Oración" ? "5%" : (t.reutilizable ? "∞" : "rest: " + t.cantidad.ToString());
             int idx = toolbarOrden != null ? System.Array.IndexOf(toolbarOrden, t.nombre) : -1;
-            string tecla = idx >= 0 ? "<size=60%>[" + (idx + 1) + "]</size> " : "";
-            etiquetasHerramientas[t.nombre].text = tecla + t.nombre + "\n<size=70%>" + cant + "</size>";
+            string tecla = idx >= 0 ? "<size=110%>[" + (idx + 1) + "]</size> " : "";
+            var label = etiquetasHerramientas[t.nombre];
+            label.text = tecla + t.nombre + "\n<size=85%>" + cant + "</size>";
+            label.color = agotado ? Color.red : new Color(1f, 1f, 1f, 0.9f);
+            var bg = label.transform.parent.GetComponent<UnityEngine.UI.Image>();
+            if (bg != null)
+                bg.color = agotado ? new Color(0.6f, 0.1f, 0.1f, 0.7f)
+                    : t.nombre == "Oración" ? new Color(0.8f, 0.7f, 0.1f, 0.7f)
+                    : new Color(0.16f, 0.45f, 0.7f, 0.6f);
         }
     }
 
@@ -283,6 +309,8 @@ public class UIManager : MonoBehaviour
         barraVidaFill.type = Image.Type.Filled;
         barraVidaFill.fillMethod = Image.FillMethod.Horizontal;
         barraVidaFill.fillAmount = 0f;
+        hpLabel = CrearTexto("HpLabel", barraFondo.transform, Vector2.zero, Vector2.one, 22, TextAlignmentOptions.Center);
+        hpLabel.color = Color.white;
 
         // Segundo panel de paciente (la OTRA camilla), más pequeño, debajo del primero
         panelPaciente2 = CrearPanel("PatientPanel2", hudRoot.transform, new Vector2(0.62f, 0.58f), new Vector2(0.98f, 0.71f), new Color(0.05f, 0.05f, 0.08f, 0.7f));
@@ -294,6 +322,8 @@ public class UIManager : MonoBehaviour
         barraVidaFill2.type = Image.Type.Filled;
         barraVidaFill2.fillMethod = Image.FillMethod.Horizontal;
         barraVidaFill2.fillAmount = 0f;
+        hpLabel2 = CrearTexto("HpLabel2", barraFondo2.transform, Vector2.zero, Vector2.one, 16, TextAlignmentOptions.Center);
+        hpLabel2.color = Color.white;
         panelPaciente2.SetActive(false);
 
         // Contador de días (arriba al centro)
@@ -304,8 +334,8 @@ public class UIManager : MonoBehaviour
         narrador = CrearTexto("NarradorTexto", hudRoot.transform, new Vector2(0.1f, 0.16f), new Vector2(0.9f, 0.24f), 28, TextAlignmentOptions.Center);
         narrador.fontStyle = FontStyles.Italic;
 
-        // Panel de Decisiones Rápidas: barra de herramientas (abajo)
-        var toolbar = CrearPanel("Toolbar", hudRoot.transform, new Vector2(0.02f, 0.02f), new Vector2(0.98f, 0.14f), new Color(0.05f, 0.05f, 0.08f, 0.75f));
+        // Panel de Decisiones Rápidas: barra de herramientas (abajo, más pequeña, solo informativa)
+        var toolbar = CrearPanel("Toolbar", hudRoot.transform, new Vector2(0.02f, 0.01f), new Vector2(0.98f, 0.13f), new Color(0.05f, 0.05f, 0.08f, 0.7f));
         toolbarOrden = new string[] { "Gasas", "Alcohol", "Pinzas", "Suturas", "Torniquete", "Kit", "Oración" };
         string[] orden = toolbarOrden;
         float ancho = 1f / orden.Length;
@@ -313,14 +343,11 @@ public class UIManager : MonoBehaviour
         {
             string nombre = orden[i];
             var btnGO = CrearPanel("Tool_" + nombre, toolbar.transform,
-                new Vector2(i * ancho + 0.006f, 0.1f), new Vector2((i + 1) * ancho - 0.006f, 0.9f),
-                nombre == "Oración" ? new Color(0.8f, 0.7f, 0.1f, 1f) : new Color(0.16f, 0.45f, 0.7f, 1f));
-            var btn = btnGO.AddComponent<Button>();
-            string capturado = nombre; // capturar por valor para el closure
-            btn.onClick.AddListener(() => MedicalToolsManager.Instance.UseTool(capturado));
+                new Vector2(i * ancho + 0.004f, 0.05f), new Vector2((i + 1) * ancho - 0.004f, 0.95f),
+                nombre == "Oración" ? new Color(0.8f, 0.7f, 0.1f, 0.7f) : new Color(0.16f, 0.45f, 0.7f, 0.6f));
 
-            var label = CrearTexto("Label", btnGO.transform, Vector2.zero, Vector2.one, 22, TextAlignmentOptions.Center);
-            label.color = Color.white;
+            var label = CrearTexto("Label", btnGO.transform, new Vector2(0f, 0.0f), new Vector2(1f, 0.85f), 24, TextAlignmentOptions.Center);
+            label.color = new Color(1f, 1f, 1f, 0.9f);
             etiquetasHerramientas[nombre] = label;
         }
         ActualizarEtiquetasHerramientas();

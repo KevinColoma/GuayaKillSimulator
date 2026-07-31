@@ -20,6 +20,9 @@ public class FirstPersonLook : MonoBehaviour
         character = GetComponentInParent<FirstPersonMovement>().transform;
     }
 
+    // Clave de la sensibilidad guardada (la ajusta el slider de Ajustes)
+    public const string PrefSensibilidad = "sensibilidad_mouse";
+
     void Start()
     {
         // No bloqueamos el cursor aquí, el menú lo controla
@@ -27,6 +30,16 @@ public class FirstPersonLook : MonoBehaviour
         {
             character = GetComponentInParent<FirstPersonMovement>().transform;
         }
+
+        // Recuperar la sensibilidad elegida por el jugador en sesiones anteriores
+        sensitivity = PlayerPrefs.GetFloat(PrefSensibilidad, sensitivity);
+    }
+
+    // La llama el slider de Ajustes: aplica en vivo y persiste.
+    public void SetSensibilidad(float valor)
+    {
+        sensitivity = Mathf.Max(0.05f, valor);
+        PlayerPrefs.SetFloat(PrefSensibilidad, sensitivity);
     }
 
 void Update()

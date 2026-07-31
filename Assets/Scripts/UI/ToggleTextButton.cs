@@ -43,6 +43,11 @@ public class ToggleTextButton : MonoBehaviour
         if (label != null)
             label.text = etiquetaBase + ": " + (valorActual ? "SÍ" : "NO");
         if (fondo != null)
+        {
             fondo.color = valorActual ? colorActivo : colorInactivo;
+            // Texto siempre legible: el verde activo es muy claro (pide letra oscura)
+            // y el rojo inactivo es oscuro (pide letra blanca).
+            UIContrast.AplicarATextos(this, fondo.color);
+        }
     }
 }

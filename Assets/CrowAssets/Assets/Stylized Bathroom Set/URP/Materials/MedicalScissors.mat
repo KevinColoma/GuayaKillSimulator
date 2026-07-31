@@ -109,7 +109,7 @@ Material:
     - _LabelSmoothness: 0.12
     - _Metallic: 0
     - _MetallicA: 0.874
-    - _MetallicB: 0
+    - _MetallicB: 1
     - _MetallicC: 0
     - _OcclusionStrength: 1
     - _Parallax: 0.005
@@ -132,9 +132,9 @@ Material:
     m_Colors:
     - _BaseColor: {r: 1, g: 1, b: 1, a: 1}
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _ColorA: {r: 0.7207546, g: 0.7207546, b: 0.7207546, a: 0}
+    - _ColorA: {r: 0.3660378, g: 0.3660378, b: 0.3660378, a: 0}
     - _ColorB: {r: 1, g: 1, b: 1, a: 0}
-    - _ColorC: {r: 1, g: 1, b: 1, a: 0}
+    - _ColorC: {r: 0.2603773, g: 0.21763611, b: 0.21763611, a: 0}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _Gel_Color: {r: 0.554717, g: 0.025148716, b: 0, a: 0}
     - _Label_Color: {r: 1, g: 1, b: 1, a: 0}

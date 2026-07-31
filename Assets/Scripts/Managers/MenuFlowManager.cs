@@ -61,10 +61,17 @@ public class MenuFlowManager : MonoBehaviour
     public SingleSelectButtonGroup rasgosGroup;
     public Button avatarConfirmarButton;
 
+    [Header("Créditos")]
+    public GameObject creditosPanel;
+
+    [Header("Game Over")]
+    public GameObject gameOverPanel;
+
     [Header("Pausa")]
     public Button reanudarButton;
     public Button reiniciarButton;
     public Button salirAlMenuButton;
+    public Button ajustesPausaButton;
 
     [Header("Referencias del jugador")]
     public GameObject playerGameObject;
@@ -87,45 +94,108 @@ public class MenuFlowManager : MonoBehaviour
             rotacionInicialJugador = playerGameObject.transform.rotation;
         }
 
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnGameOver += IrAGameOver;
+
+        CrearGameOverPanel();
+        CrearCreditosPanel();
         WireButtons();
+        SetMenuBackground();
         SetPlayerControl(false);
         SetCursorState(false);
         SetActivo(pauseMenuPanel, false);
         MostrarSolo(PantallaMenu.Splash);
     }
 
-    bool cursorLibre = false;
+    void CrearGameOverPanel()
+    {
+        if (gameOverPanel != null) return;
+        var canvas = GameObject.Find("MenuCanvas");
+        if (canvas == null) return;
+        gameOverPanel = new GameObject("GameOverPanel", typeof(RectTransform));
+        gameOverPanel.transform.SetParent(canvas.transform, false);
+        var bg = gameOverPanel.AddComponent<UnityEngine.UI.Image>();
+        bg.color = new Color(0.08f, 0.02f, 0.02f, 0.92f);
+        var rt = gameOverPanel.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+
+        var txo = new GameObject("GameOverText", typeof(RectTransform));
+        txo.transform.SetParent(gameOverPanel.transform, false);
+        var trt = txo.GetComponent<RectTransform>();
+        trt.anchorMin = new Vector2(0.08f, 0.2f);
+        trt.anchorMax = new Vector2(0.92f, 0.8f);
+        trt.offsetMin = Vector2.zero; trt.offsetMax = Vector2.zero;
+        var txt = txo.AddComponent<TMPro.TextMeshProUGUI>();
+        txt.fontSize = 38;
+        txt.alignment = TMPro.TextAlignmentOptions.Center;
+        txt.color = new Color(1f, 0.3f, 0.2f, 1f);
+        txt.text = "";
+        gameOverPanel.SetActive(false);
+        Debug.Log("[MenuFlow] gameOverPanel creado desde código");
+    }
+
+    void CrearCreditosPanel()
+    {
+        if (creditosPanel != null) return;
+        var canvas = GameObject.Find("MenuCanvas");
+        if (canvas == null) return;
+        creditosPanel = new GameObject("CreditosPanel", typeof(RectTransform));
+        creditosPanel.transform.SetParent(canvas.transform, false);
+        var bg = creditosPanel.AddComponent<UnityEngine.UI.Image>();
+        bg.color = new Color(0.05f, 0.05f, 0.1f, 0.94f);
+        var rt = creditosPanel.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+
+        var txo = new GameObject("CreditosText", typeof(RectTransform));
+        txo.transform.SetParent(creditosPanel.transform, false);
+        var trt = txo.GetComponent<RectTransform>();
+        trt.anchorMin = new Vector2(0.08f, 0.3f);
+        trt.anchorMax = new Vector2(0.92f, 0.7f);
+        trt.offsetMin = Vector2.zero; trt.offsetMax = Vector2.zero;
+        var txt = txo.AddComponent<TMPro.TextMeshProUGUI>();
+        txt.fontSize = 36;
+        txt.alignment = TMPro.TextAlignmentOptions.Center;
+        txt.color = new Color(1f, 0.85f, 0.2f, 1f);
+        txt.text = "Este juego fue hecho con amor compresion y ternura! \n\nGRUPO 8\n\nKevin Coloma\nJeffrey Manobanda\nJhordy Marcillo\nMoreira Erick\n\nPresiona ESC o haz clic para cerrar";
+
+        // Clic en cualquier parte cierra
+        creditosPanel.AddComponent<Button>().onClick.AddListener(OcultarCreditos);
+        creditosPanel.SetActive(false);
+    }
+
+    public void MostrarCreditos()
+    {
+        CrearCreditosPanel();
+        SetActivo(creditosPanel, true);
+        if (creditosPanel != null) creditosPanel.transform.SetAsLastSibling();
+    }
+
+    public void OcultarCreditos()
+    {
+        SetActivo(creditosPanel, false);
+    }
 
     void Update()
     {
+        if (creditosPanel != null && creditosPanel.activeSelf && InputCompat.IsKeyDown(KeyCode.Escape))
+        {
+            OcultarCreditos();
+            return;
+        }
+        if (gameOverPanel != null && gameOverPanel.activeSelf)
+        {
+            if (InputCompat.IsKeyDown(KeyCode.Space) || InputCompat.IsKeyDown(KeyCode.Escape))
+            {
+                SalirAlMenuPrincipal();
+            }
+            return;
+        }
         if (juegoActivo && InputCompat.IsKeyDown(KeyCode.Escape))
         {
             TogglePausa();
         }
-
-        // Tab: alterna entre EXPLORAR (cursor bloqueado, mouse-look) y ATENDER
-        // (cursor libre para hacer clic en las herramientas del HUD)
-        if (juegoActivo && !pausado)
-        {
-            var kb = Keyboard.current;
-            if (kb != null && kb.tabKey.wasPressedThisFrame)
-                ToggleCursorLibre();
-        }
-    }
-
-    void ToggleCursorLibre()
-    {
-        cursorLibre = !cursorLibre;
-        SetCursorState(!cursorLibre);          // libre = cursor desbloqueado
-        if (playerLook != null)
-        {
-            playerLook.SetControlEnabled(!cursorLibre);
-            playerLook.enabled = !cursorLibre;  // apagar el componente entero: su Update no corre = cámara 100% quieta
-        }
-        if (UIManager.Instance != null)
-            UIManager.Instance.MostrarNarrador(cursorLibre
-                ? "Modo ATENDER: haz clic en las herramientas (Tab para volver a explorar)."
-                : "Modo EXPLORAR: mueve la cámara y camina (Tab para atender).", 3f);
     }
 
     void WireButtons()
@@ -179,6 +249,11 @@ public class MenuFlowManager : MonoBehaviour
             var go = GameObject.Find("MenuCanvas/PauseMenuPanel/PauseSalirButton");
             if (go != null) salirAlMenuButton = go.GetComponent<Button>();
         }
+        if (ajustesPausaButton == null && pauseMenuPanel != null) {
+            // transform.Find sí encuentra hijos inactivos (el panel de pausa arranca oculto)
+            var t = pauseMenuPanel.transform.Find("PauseAjustesButton");
+            if (t != null) ajustesPausaButton = t.GetComponent<Button>();
+        }
 
         if (splashClickCatcher != null)
         {
@@ -190,13 +265,39 @@ public class MenuFlowManager : MonoBehaviour
         WireButton(puntuacionesButton, IrAPuntuaciones);
         WireButton(scoresVolverButton, IrAMenuPrincipal);
         WireButton(iniciarTurnoButton, IrAPersonalizacion);
-        WireButton(ajustesVolverButton, IrAMenuPrincipal);
+        WireButton(ajustesVolverButton, VolverDesdeAjustes);
+        WireButton(ajustesPausaButton, IrAAjustesDesdePausa);
         WireButton(logrosVolverButton, IrAMenuPrincipal);
         WireButton(avatarVolverButton, IrAMenuPrincipal);
         WireButton(avatarConfirmarButton, ConfirmarPersonalizacionEIniciarGameplay);
         WireButton(reanudarButton, TogglePausa);
         WireButton(reiniciarButton, ReiniciarTurno);
         WireButton(salirAlMenuButton, SalirAlMenuPrincipal);
+
+        // Botón Créditos en esquina inferior derecha del MainMenuPanel
+        if (mainMenuPanel != null)
+        {
+            var btnGO = new GameObject("CreditosButton", typeof(RectTransform));
+            btnGO.transform.SetParent(mainMenuPanel.transform, false);
+            var btnRt = btnGO.GetComponent<RectTransform>();
+            btnRt.anchorMin = new Vector2(0.78f, 0.02f);
+            btnRt.anchorMax = new Vector2(0.98f, 0.09f);
+            btnRt.offsetMin = Vector2.zero; btnRt.offsetMax = Vector2.zero;
+            var btn = btnGO.AddComponent<Button>();
+            btn.targetGraphic = btnGO.AddComponent<UnityEngine.UI.Image>();
+            btn.targetGraphic.color = new Color(0.8f, 0.7f, 0.1f, 0.85f);
+            var btnTxtGO = new GameObject("Text", typeof(RectTransform));
+            btnTxtGO.transform.SetParent(btnGO.transform, false);
+            var btnTxtRt = btnTxtGO.GetComponent<RectTransform>();
+            btnTxtRt.anchorMin = Vector2.zero; btnTxtRt.anchorMax = Vector2.one;
+            btnTxtRt.offsetMin = Vector2.zero; btnTxtRt.offsetMax = Vector2.zero;
+            var btnTxt = btnTxtGO.AddComponent<TMPro.TextMeshProUGUI>();
+            btnTxt.text = "CRÉDITOS";
+            btnTxt.fontSize = 28;
+            btnTxt.alignment = TMPro.TextAlignmentOptions.Center;
+            btnTxt.color = Color.white;
+            btn.onClick.AddListener(MostrarCreditos);
+        }
     }
 
     void WireButton(Button boton, UnityAction accion)
@@ -214,6 +315,8 @@ public class MenuFlowManager : MonoBehaviour
         SetActivo(achievementsPanel, pantalla == PantallaMenu.Logros);
         SetActivo(scoresPanel, pantalla == PantallaMenu.Puntuaciones);
         SetActivo(avatarPanel, pantalla == PantallaMenu.Personalizacion);
+        if (gameOverPanel != null) SetActivo(gameOverPanel, false);
+        if (creditosPanel != null) SetActivo(creditosPanel, false);
     }
 
     void SetActivo(GameObject go, bool activo)
@@ -221,12 +324,61 @@ public class MenuFlowManager : MonoBehaviour
         if (go != null) go.SetActive(activo);
     }
 
+    void SetMenuBackground()
+    {
+        var tex = Resources.Load<Texture2D>("MenuBackground");
+        if (tex == null) return;
+        AddBgToPanel(splashPanel, tex);
+        AddBgToPanel(mainMenuPanel, tex);
+    }
+
+    void AddBgToPanel(GameObject panel, Texture2D tex)
+    {
+        if (panel == null) return;
+        var bgGO = new GameObject("BgImage", typeof(RectTransform), typeof(UnityEngine.UI.RawImage));
+        bgGO.transform.SetParent(panel.transform, false);
+        var rt = bgGO.GetComponent<RectTransform>();
+        rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+        var ri = bgGO.GetComponent<UnityEngine.UI.RawImage>();
+        ri.texture = tex;
+        bgGO.transform.SetAsFirstSibling();
+    }
+
     public void IrAMenuPrincipal() => MostrarSolo(PantallaMenu.MenuPrincipal);
 
     public void IrAAjustes()
     {
+        ajustesDesdePausa = false;
         MostrarSolo(PantallaMenu.Ajustes);
         WireAudioSliders();
+    }
+
+    // Ajustes abiertos DURANTE la partida (desde el menú de pausa): permite afinar la
+    // sensibilidad y el audio en caliente y volver al juego para probarlo al instante.
+    bool ajustesDesdePausa = false;
+
+    public void IrAAjustesDesdePausa()
+    {
+        ajustesDesdePausa = true;
+        SetActivo(pauseMenuPanel, false);
+        SetActivo(settingsPanel, true);
+        if (settingsPanel != null) settingsPanel.transform.SetAsLastSibling();
+        WireAudioSliders();
+    }
+
+    // El botón "Volver" de Ajustes regresa a donde estabas: pausa o menú principal.
+    public void VolverDesdeAjustes()
+    {
+        if (ajustesDesdePausa)
+        {
+            ajustesDesdePausa = false;
+            SetActivo(settingsPanel, false);
+            SetActivo(pauseMenuPanel, true);
+            if (pauseMenuPanel != null) pauseMenuPanel.transform.SetAsLastSibling();
+            return;
+        }
+        IrAMenuPrincipal();
     }
 
     public void IrALogros()
@@ -265,15 +417,48 @@ public class MenuFlowManager : MonoBehaviour
     {
         MostrarSolo(PantallaMenu.Personalizacion);
         WireAvatarGroups();
+        AgrandarTextosAvatar();
     }
 
-    // ------------------------- Ajustes: volúmenes -------------------------
-    Slider volumeSlider, sfxSlider, musicSlider;
+    void AgrandarTextosAvatar()
+    {
+        if (avatarPanel == null) return;
+        var textos = avatarPanel.GetComponentsInChildren<TMPro.TextMeshProUGUI>(true);
+        foreach (var t in textos)
+        {
+            if (t.fontSize < 28f)
+                t.fontSize = Mathf.Max(28f, t.fontSize * 1.4f);
+        }
+    }
+
+    // ------------------------- Ajustes: volúmenes y sensibilidad -------------------------
+    Slider volumeSlider, sfxSlider, musicSlider, sensibilidadSlider;
     bool audioWired = false;
+
+    // Rango de sensibilidad del mouse ofrecido en Ajustes
+    const float SensMin = 0.05f;
+    const float SensMax = 4f;
 
     void WireAudioSliders()
     {
         if (audioWired) return;
+
+        // Sensibilidad del mouse -> FirstPersonLook (se aplica en vivo y se guarda)
+        if (sensibilidadSlider == null)
+        {
+            var go = GameObject.Find("MenuCanvas/SettingsPanel/SensibilidadSlider");
+            if (go != null) sensibilidadSlider = go.GetComponent<Slider>();
+        }
+        if (sensibilidadSlider != null)
+        {
+            sensibilidadSlider.minValue = SensMin;
+            sensibilidadSlider.maxValue = SensMax;
+            float actual = playerLook != null
+                ? playerLook.sensitivity
+                : PlayerPrefs.GetFloat(FirstPersonLook.PrefSensibilidad, 1.2f);
+            sensibilidadSlider.value = Mathf.Clamp(actual, SensMin, SensMax);
+            sensibilidadSlider.onValueChanged.AddListener(SetSensibilidad);
+        }
 
         // Volumen general (maestro) -> AudioListener.volume
         if (volumeSlider == null)
@@ -311,13 +496,55 @@ public class MenuFlowManager : MonoBehaviour
             musicSlider.onValueChanged.AddListener(AudioManager.Instance.SetVolumenMusica);
         }
 
-        if (volumeSlider != null && sfxSlider != null && musicSlider != null)
+        // Lecturas numéricas a la derecha de cada slider (feedback inmediato del valor)
+        AdjuntarValorLabel(volumeSlider, v => Mathf.RoundToInt(v * 100f) + "%");
+        AdjuntarValorLabel(sfxSlider, v => Mathf.RoundToInt(v * 100f) + "%");
+        AdjuntarValorLabel(musicSlider, v => Mathf.RoundToInt(v * 100f) + "%");
+        AdjuntarValorLabel(sensibilidadSlider, v => v.ToString("0.0") + "x");
+
+        if (volumeSlider != null && sfxSlider != null && musicSlider != null && sensibilidadSlider != null)
             audioWired = true;
+    }
+
+    // Crea (una sola vez) una etiqueta con el valor actual del slider y la mantiene al día.
+    void AdjuntarValorLabel(Slider slider, System.Func<float, string> formato)
+    {
+        if (slider == null) return;
+        string nombre = slider.name + "_Valor";
+        if (slider.transform.parent.Find(nombre) != null) return; // ya existe
+
+        var sliderRT = slider.GetComponent<RectTransform>();
+        var go = new GameObject(nombre, typeof(RectTransform));
+        go.transform.SetParent(slider.transform.parent, false);
+        var rt = go.GetComponent<RectTransform>();
+        // Misma franja vertical que el slider, pegado a su derecha
+        rt.anchorMin = new Vector2(0.905f, sliderRT.anchorMin.y);
+        rt.anchorMax = new Vector2(0.99f, sliderRT.anchorMax.y);
+        rt.offsetMin = Vector2.zero; rt.offsetMax = Vector2.zero;
+
+        var txt = go.AddComponent<TextMeshProUGUI>();
+        txt.raycastTarget = false;
+        txt.fontSize = 26;
+        txt.alignment = TextAlignmentOptions.MidlineLeft;
+        txt.color = Color.white;
+        txt.text = formato(slider.value);
+
+        slider.onValueChanged.AddListener(v => txt.text = formato(v));
     }
 
     public void SetVolumenGeneral(float valor)
     {
         AudioListener.volume = valor;
+    }
+
+    // Aplica la sensibilidad del mouse en vivo (y la persiste vía FirstPersonLook).
+    public void SetSensibilidad(float valor)
+    {
+        if (playerLook == null && playerGameObject != null)
+            playerLook = playerGameObject.GetComponentInChildren<FirstPersonLook>();
+
+        if (playerLook != null) playerLook.SetSensibilidad(valor);
+        else PlayerPrefs.SetFloat(FirstPersonLook.PrefSensibilidad, valor);
     }
 
     // ------------------------- Personalización: grupos de selección -------------------------
@@ -383,10 +610,10 @@ public class MenuFlowManager : MonoBehaviour
 
         MostrarSolo(PantallaMenu.Gameplay); // oculta todos los paneles de menú (Gameplay = ninguno visible)
         SetActivo(pauseMenuPanel, false);
+        SetActivo(gameOverPanel, false);
 
         SetPlayerControl(true);
         SetCursorState(true);
-        cursorLibre = false;
         juegoActivo = true;
         pausado = false;
         Time.timeScale = 1f;
@@ -418,7 +645,7 @@ Debug.Log($"Turno iniciado. Doc: {RunConfig.nombreJugador} | Rasgo: {RunConfig.r
     void MostrarControlesEnNarrador()
     {
         if (UIManager.Instance != null)
-            UIManager.Instance.MostrarNarrador("Controles: WASD moverte · teclas 1-7 herramientas · Tab liberar el cursor para clic · Esc pausa.", 7f);
+            UIManager.Instance.MostrarNarrador("Controles: WASD moverte · teclas 1-7 herramientas · Mira modelos 3D en quirófanos y presiona E para usarlos · Esc pausa.", 8f);
     }
 
     // Resumen legible de la personalización activa y el efecto real de cada opción.
@@ -477,7 +704,6 @@ Debug.Log($"Turno iniciado. Doc: {RunConfig.nombreJugador} | Rasgo: {RunConfig.r
         else
         {
             Time.timeScale = 1f;
-            cursorLibre = false;
             SetCursorState(true);
             SetPlayerControl(true);
             SetActivo(pauseMenuPanel, false);
@@ -528,6 +754,7 @@ Debug.Log($"Turno iniciado. Doc: {RunConfig.nombreJugador} | Rasgo: {RunConfig.r
         juegoActivo = false;
         pausado = false;
         SetActivo(pauseMenuPanel, false);
+        SetActivo(gameOverPanel, false);
 
         SetPlayerControl(false);
         SetCursorState(false);
@@ -545,6 +772,14 @@ Debug.Log($"Turno iniciado. Doc: {RunConfig.nombreJugador} | Rasgo: {RunConfig.r
         ScoreManager.GuardarScore(RunConfig.nombreJugador, dias, salvados);
     }
 
+    // Si el jugador cierra el juego a mitad de un turno (sin pasar por "Salir al menú"),
+    // su partida igual queda registrada en la tabla de puntuaciones.
+    void OnApplicationQuit()
+    {
+        if (juegoActivo)
+            GuardarPuntuacionDeLaPartida();
+    }
+
     void RestaurarJugadorAPosicionInicial()
     {
         if (playerGameObject == null) return;
@@ -557,6 +792,36 @@ Debug.Log($"Turno iniciado. Doc: {RunConfig.nombreJugador} | Rasgo: {RunConfig.r
     {
         Cursor.lockState = locked ? CursorLockMode.Locked : CursorLockMode.None;
         Cursor.visible = !locked;
+    }
+
+    public void IrAGameOver()
+    {
+        Debug.Log("[MenuFlow] IrAGameOver INVOCADO. gameOverPanel=" + (gameOverPanel != null ? gameOverPanel.name : "null"));
+        juegoActivo = false;
+        pausado = false;
+        Time.timeScale = 0f;
+
+        SetPlayerControl(false);
+        SetCursorState(false);
+        SetActivo(pauseMenuPanel, false);
+
+        CrearGameOverPanel();
+
+        Debug.Log("[MenuFlow] Activando gameOverPanel...");
+        SetActivo(gameOverPanel, true);
+        if (gameOverPanel != null)
+        {
+            gameOverPanel.transform.SetAsLastSibling();
+            var txt = gameOverPanel.GetComponentInChildren<TMPro.TextMeshProUGUI>();
+            if (txt != null)
+            {
+                int dias = GameManager.Instance != null ? GameManager.Instance.daysSurvived : 0;
+                int salvados = DifficultyDirector.Instance != null ? DifficultyDirector.Instance.pacientesSalvados : 0;
+                txt.text = "☠ GAME OVER ☠\n\nPerdiste 4 pacientes seguidos.\n\nDías sobrevividos: " + dias + "\nPacientes salvados: " + salvados + "\n\nPresiona ESPACIO o ESC para volver al menú.";
+            }
+        }
+
+        Debug.Log("[MenuFlow] IrAGameOver completado. gameOverPanel=" + (gameOverPanel != null ? gameOverPanel.gameObject.name : "null") + " active=" + (gameOverPanel != null ? gameOverPanel.activeSelf.ToString() : "N/A"));
     }
 
     void SetPlayerControl(bool activo)
